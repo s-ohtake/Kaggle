@@ -1,0 +1,30 @@
+---
+title: "Coupon Purchase Prediction"
+author: "s-ohtake"
+date: "2015年7月23日"
+output: html_document
+---
+
+```{r user,cache=TRUE}
+library(ggplot2)
+library(dplyr) 
+library(tidyr) 
+library(pyramid) 
+
+user.d<-read.csv("~/Kaggle/Coupon Purchase Prediction/data/user_list.csv",header=T, fileEncoding="UTF-8")
+head(user.d)
+user.demogra<- user.d %>%dplyr::group_by(SEX_ID,AGE) %>%
+  dplyr::summarise(CNT = n())%>%data.frame %>%
+  tidyr::spread(SEX_ID, CNT, fill=NA, convert=FALSE)
+
+user.pref<- user.d %>%dplyr::group_by(SEX_ID,PREF_NAME) %>%
+  dplyr::summarise(CNT = n())%>%data.frame %>%
+  tidyr::spread(SEX_ID, CNT, fill=NA, convert=FALSE)
+
+pyramids(Left=user.demogra$m,Right=user.demogra$f,Center=user.demogra$AGE,
+ Clab="Age",Llab="男性",Rlab="女性",Cstep=10,main="User pyramid")
+
+pyramids(Left=user.pref$m,Right=user.pref$f,Center=user.pref$PREF_NAME,
+ Clab="都道府県",Llab="男性",Rlab="女性",Cstep=10,main="User pyramid")
+
+```
