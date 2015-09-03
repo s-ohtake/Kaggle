@@ -250,123 +250,68 @@ subset(coupon.ma.cl,CLASS==42)
 head(coupon.area.cl)
 length(ma.class)
 #--------------------------------------------------------------------------------------
-user.class<-cutree(coupon.user.hc, h =2)
+# 0.002489 user h:1.5 ma h:2 area h:3
+# 0.004188 user h:1 ma h:1 area h:1
+
+user.class<-cutree(coupon.user.hc, h =1)
 table(user.class)
 length(user.class)
 
-ma.class<-cutree(coupon.ma.hc, h = 2)
-
+ma.class<-cutree(coupon.ma.hc, h = 0.8)
 (table(ma.class))
 
-area.class<-cutree(coupon.area.hc, h = 3)
+area.class<-cutree(coupon.area.hc, h = 0.8)
 (table(area.class))
-
+#--------------------------------------------------------------------------------------
 # join by all clas data 
 coupon.all.cl<-data.frame(COUPON_ID_hash=names(ma.class),MA_CLASS=ma.class) %>% 
     inner_join(data.frame(COUPON_ID_hash=names(area.class),AREA_CLASS=area.class),
                by="COUPON_ID_hash")%>% mutate(ALL_CLASS=paste(MA_CLASS,AREA_CLASS,sep=":"))
 
 sum(table(coupon.all.cl$ALL_CLASS))
+head(coupon.all.cl)
 #--------------------------------------------------------------------------------------
-# 学習データ作成
+# TEST ITEM JOIN 
 coupon.train.cl<-coupon.all.cl%>%dplyr::filter(COUPON_ID_hash %in%area.train.d$COUPON_ID_hash)
-nrow(coupon.all.cl)
 
-# ユーザマスタと購買履歴のJOIN
-user.ma<-inner_join(user.d[,-c(7)],data.frame(USER_ID_hash=names(user.class),
-                                              CL=user.class))
+coupon.test.cl<-coupon.all.cl%>%dplyr::filter(COUPON_ID_hash %in%area.test.d$COUPON_ID_hash)
 
-user.ma<-left_join(user.ma,detail.train.d,by="USER_ID_hash")
-length(unique(user.ma$USER_ID_hash))
-head(user.ma)
+# TEST USER JOIN 
+user.ma<-inner_join(user.d[,-c(7)],data.frame(USER_ID_hash=names(user.class),CL=user.class))
+user.train.cl<-left_join(user.ma,detail.train.d,by="USER_ID_hash")
 
-# user &  cl
-coupon.train.d<-left_join(user.ma,coupon.train.cl,by="COUPON_ID_hash")
-length(unique(coupon.train.d$USER_ID_hash))
-head(coupon.train.d)
-#subset(coupon.train.d,is.na(ALL_CLASS))
+# USER_CL &  ITEM_CL JOIN 
+coupon.train.d<-left_join(user.train.cl,coupon.train.cl,by="COUPON_ID_hash")%>%
+    group_by(USER_ID_hash,COUPON_ID_hash,WITHDRAW_DATE,MA_CLASS,AREA_CLASS,ALL_CLASS,CL) %>% summarise(N=n())
 
-# user毎の最大化クラス
-head(coupon.train.d)
-User.Coupon.cl<-coupon.train.d%>%group_by(MA_CLASS,AREA_CLASS,CL)%>%summarise(N=n())
-head(User.Coupon.cl)
-
-User.cl<-User.Coupon.cl%>%group_by(CL)%>% summarise(MAX=max(N))
-head(User.cl)
-
-User.Coupon.res<-User.Coupon.cl%>%inner_join(User.cl)%>%dplyr::filter(N==MAX)
-length(unique(User.Coupon.res$CL))
-
-head(User.Coupon.res)
-table(User.Coupon.res$AREA_CLASS)
-table(User.Coupon.res$MA_CLASS)
-table(User.Coupon.res$CL)
-
-gc()
-
-# test
-# list.test.d
-# area.test.d
-nrow(list.test.d)
-nrow(area.test.d)
-
-coupon.test.cl<-coupon.all.cl%>%dplyr::filter(COUPON_ID_hash %in%
-                                                  area.test.d$COUPON_ID_hash)
-head(coupon.test.cl)
+class.ma<-coupon.train.d %>% group_by(MA_CLASS,AREA_CLASS,ALL_CLASS,CL)%>%summarise(N=n())
+head(class.ma)
 nrow(coupon.test.cl)
 
-table(coupon.test.cl$MA_CLASS)
-table(ma.class)
-table(coupon.test.cl$AREA_CLASS)
-table(area.class)
-# check
-table(User.Coupon.res$MA_CLAS,User.Coupon.res$AREA_CLASS)
-table(User.Coupon.res$CL,User.Coupon.res$MA_CLAS)
+coupon.test.d<-coupon.test.cl%>%inner_join(class.ma)%>%group_by(CL)%>%arrange(desc(N))%>%filter(row_number(desc(N))<=10 )
+length(unique(coupon.test.d$COUPON_ID_hash))
+length(unique(coupon.test.d$CL))
 
-Coupon.test.tmp<-coupon.test.cl %>% inner_join(User.Coupon.res)
-subset(Coupon.test.tmp,CL==3)
-length(unique(Coupon.test.tmp$COUPON_ID_hash))
+subset(coupon.test.d,CL==7)
+
+#write.csv(coupon.test.d,"2test_class.csv")
+
+res<-data.frame()
+for(i in unique(coupon.test.d$CL)){
+    tmp.c<-subset(coupon.test.d,CL==i,select="COUPON_ID_hash")%>%data.frame
+    res<-rbind(res,data.frame(CL=i,PURCHASED_COUPONS=paste(as.character(tmp.c$COUPON_ID_hash),collapse = " ")))
+}
+
+submission<-user.ma%>%left_join(res)%>%dplyr::select(USER_ID_hash,WITHDRAW_DATE,PURCHASED_COUPONS,CL)
+nrow(submission)
+nrow(subset(submission,is.na(PURCHASED_COUPONS)))
+
+submission$PURCHASED_COUPONS<-as.character(submission$PURCHASED_COUPONS)
+submission[!is.na(submission$WITHDRAW_DATE),]$PURCHASED_COUPONS<-''
+
+write.csv(submission[,c("USER_ID_hash","PURCHASED_COUPONS")],file="~/Kaggle/Coupon Purchase Prediction/submisstion/submission10.csv",row.names = F,quote = F)
 
 
-Coupon.test.n<-Coupon.test.tmp%>%group_by(CL)%>% summarise(n=n())
-subset(Coupon.test.n,n>1)
-
-# data csv 
-head(list.test.d)
-head(user.d)
-nrow(user.d)
-test.res<-Coupon.test.tmp%>% inner_join(list.test.d) %>% inner_join(user.d)
-nrow(test.res)
-
-
-# rank by
-head()
-Coupon.test.res<-Coupon.test.tmp%>%group_by(CL)%>% 
-    filter(min_rank(desc(COUPON_ID_hash))==1)
-
-head(Coupon.test.res)
-table(Coupon.test.res$AREA_CLASS)
-table(Coupon.test.res$MA_CLASS)
-
-length(unique(Coupon.test.res$CL))
-
-nrow(list.test.d)
-nrow(user.d)
-
-res<-user.d%>%left_join(Coupon.test.res)%>%dplyr::select(USER_ID_hash,COUPON_ID_hash,CL)
-nrow(res)
-unique(subset(res,is.na(COUPON_ID_hash))$CL)
-length(user.class[user.class==134])
-
-library(Lahman)
-
-head(res)
-nrow(res)
-length(unique(res$COUPON_ID_hash))
-length(unique(res$USER_ID_hash))
-
-colnames(res)[2]<-"PURCHASED_COUPONS"
-write.csv(res,file="~/Kaggle/Coupon Purchase Prediction/submisstion/submission1.csv",row.names = F,quote = F)
 
 #----------------------------------------------
 # メモリ足りずできない
