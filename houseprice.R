@@ -170,6 +170,7 @@ x.n<-colnames(train.d)[-which (colnames(train.d) %in% c("Id", "k", "SalePrice",'
 hlm$Run(burn.in=0.2,tr=train.d,y.n="log_SalePrice",ind='k',x.n=x.n,R=10000 ,set.Z = F)
 pred<-hlm$Predict()
 pred$R2
+
 #0.9758115
 #0.9849385
 plot(hlm$out$taudraw)
